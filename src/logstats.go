@@ -1,6 +1,6 @@
 // logstats processes logs and and prints the number of lines that contain a given regexp.
-// Pass as arguments the options -o to define the order of number fields inside the timestamp and 
-// -t to set a time interval for grouping, ranging from 10 minutes to 1 day. 
+// Pass as arguments the options -o to define the order of number fields inside the timestamp and
+// -t to set a time interval for grouping, ranging from 10 minutes to 1 day.
 package main
 
 import (
@@ -11,9 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"time"
-	"sort"
 )
 
 const (
@@ -41,6 +41,8 @@ var (
 	}
 
 	counter = make(map[string]int)
+
+	rx *regexp.Regexp
 )
 
 func main() {
@@ -56,6 +58,9 @@ func main() {
 	}
 	pattern := flag.Arg(0)
 	settings.pattern = regexp.MustCompile(pattern)
+
+	// find timestamp numbers
+	rx = regexp.MustCompile(`\d+`)
 
 	// go through the files
 	err := processFiles(flag.Arg(1))
@@ -121,7 +126,6 @@ func processFiles(glob string) error {
 // layout string is a combination of y, m, d, h, i, s, f, -
 // where -=skip the next number and i=minutes, f=fraction of seconds
 func parseTimestamp(layout, ts string) (*time.Time, error) {
-	rx := regexp.MustCompile(`\d+`)
 	arr := rx.FindAllStringSubmatch(ts, len(layout))
 	var year, month, day, hour, min, sec, nsec int
 	for i, s := range arr {
@@ -156,4 +160,3 @@ func parseTimestamp(layout, ts string) (*time.Time, error) {
 	var t = time.Date(year, time.Month(month), day, hour, min, sec, nsec, time.UTC)
 	return &t, nil
 }
-
