@@ -111,6 +111,8 @@ func processFiles(glob string) error {
 					hour = div * int(ts.Hour()/div)
 				case _10min, _15min, _30min:
 					min = div * int(ts.Minute()/div)
+				default:
+					return errors.New("Invalid value interval: " + strconv.Itoa(div))
 				}
 				tt := time.Date(ts.Year(), ts.Month(), ts.Day(), hour, min, 0, 0, ts.Location())
 				key := tt.Format("2006-01-02 15:04:05")
