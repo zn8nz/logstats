@@ -17,9 +17,13 @@ output e.g.
 ```
 
 Count occurrences of "error", ignore case, in all files *.txt that that have a line layout like:
-000034
-`./logstat -t 1 -o --mdyhis "(?i:error)" *.txt`
 
+`000034|03|03/27/2016 10:20:59.114|error#983 stacktrace..qworwor woriweorroie rwoi ruo`
+
+E.g. with some line number and thread number before the timestamp. We can skip these numbers by using a one "-" per number.
+in the -o option. If the date format is month/day/year, we can indicate that with "mdy" as part of the -o option.
+
+`./logstat -t 1 -o "--mdyhisf" "(?i:error)" *.txt`
 
 
 ##examples with -k
@@ -50,11 +54,11 @@ fatal,        1
 
 `./logstats <options> <regexp> <glob>`
 
--p: 10 = ten minutes, 15 = 15 minutes, 30 = half hour, 1 = one hour, 2 = two hour, 3 = 3 hour, 6 = 6 hour, 12 = 12 hour, 0 = 1 day intervals.
+`-p`: 10 = ten minutes, 15 = 15 minutes, 30 = half hour, 1 = one hour, 2 = two hour, 3 = 3 hour, 6 = 6 hour, 12 = 12 hour, 0 = 1 day intervals.
 
--o: the order of the fields in the timestamps, by default "ymdhisf": i=minutes, f=fraction of seconds.
+`-o`: the order of the fields in the timestamps, by default "ymdhisf": i=minutes, f=fraction of seconds.
 
--k: regexp to filter and group by.
+`-k`: regexp to filter and group by.
 
 The effect of -k can be described in a pseudo SQL as:
 ```sql
@@ -67,5 +71,5 @@ GROUP BY k
 # known bugs / to do
 1. Log entries that span multiple lines may not be handled correctly, as logstats consideres each individual line.
 Lines that show up with dates like 1999 and 2000 in the output are a symptom of this bug.
-
-2. Output not aligned with -k, if the key regexp matches different length strings.
+2. Output not aligned with `-k`, if the key regexp matches different length strings.
+3. Timestamps without separators between the fields, e.g. `20160306-125959.3` cannot be parsed correctly as such with the `-o` option. As a workaround for now use the `-k` with a string match. I think I will solve this by an alternative to `-o`: `-f "yyyymmddhhiissf"`
