@@ -34,7 +34,8 @@ var (
 	settings = struct {
 		order   string
 		groupBy int
-		pattern *regexp.Regexp
+		rxCount *regexp.Regexp
+		rxKey   *regexp.Regexp
 	}{
 		order:   "ymdhisf",
 		groupBy: _1hour,
@@ -47,20 +48,25 @@ var (
 
 func main() {
 	// parse options
+	var key string
+
 	flag.StringVar(&settings.order, "o", "ymdhisf", "order of the number fields: y=year, m=month, d=day, h=hour, i=min, s=sec, f=fraction")
 	flag.IntVar(&settings.groupBy, "t", 0, "group by: 10=ten minutes, 15=¼ hour, 30=½ hour, 1=hour, 2=two hr, 3=three hr, 6=six hr, 12=½ day, 0=day")
-
+	flag.StringVar(&key, "k", "", "regexp that defines the key to group by; cannot use with -o and -t")
 	flag.Parse()
-
 	if flag.NArg() < 2 {
 		fmt.Println("Usage: <options> <regexp> <glob>")
 		return
 	}
-	pattern := flag.Arg(0)
-	settings.pattern = regexp.MustCompile(pattern)
 
-	// find timestamp numbers
-	rx = regexp.MustCompile(`\d+`)
+	if key != "" {
+		settings.rxKey = regexp.MustCompile(key)
+	} else {
+		// find timestamp numbers
+		rx = regexp.MustCompile(`\d+`)
+	}
+	pattern := flag.Arg(0)
+	settings.rxCount = regexp.MustCompile(pattern)
 
 	// go through the files
 	err := processFiles(flag.Arg(1))
@@ -95,7 +101,15 @@ func processFiles(glob string) error {
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
 			line := scanner.Text()
-			if settings.pattern.MatchString(line) {
+			if settings.rxKey != nil {
+				match := settings.rxKey.FindString(line)
+				if match == "" {
+					continue
+				}
+				if settings.rxCount.MatchString(line) {
+					counter[match]++
+				}
+			} else if settings.rxCount.MatchString(line) {
 				ts, _ := parseTimestamp(settings.order, line)
 				min := ts.Minute()
 				hour := ts.Hour()
