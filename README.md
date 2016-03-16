@@ -24,9 +24,11 @@ Version 1.0, 2016-03-16
 
 Count occurrences of "error" in all files that match data/log*.txt, group by 30 min intervals, 
 output for values > 0.
+
 `./logstats -t 30 "error" data/log*.txt`
 
 output e.g.
+
 ```
 2016-02-28 12:00:00,        1
 2016-02-28 12:30:00,        2
@@ -40,7 +42,7 @@ Count occurrences of "error", ignore case, in all files *.txt that that have a l
 `000034|03|03/27/2016 10:20:59.114|error#983 stacktrace..qworwor woriweorroie rwoi ruo`
 
 E.g. with some line number and thread number before the timestamp. We can skip these numbers by using a one "-" per number.
-in the -o option. If the date format is month/day/year, we can indicate that with "mdy" as part of the -o option.
+in the `-o` option. If the date format is month/day/year, we can indicate that with "mdy" as part of the `-o` option.
 
 `./logstat -t 1 -o "--mdyhisf" "(?i:error)" *.txt`
 
@@ -50,6 +52,7 @@ in the -o option. If the date format is month/day/year, we can indicate that wit
 Count occurrences of "error" in all files in current folder that match *.log. Only consider lines
 that start with "2016-03-21", "2016-03-22", "2016-03-23". Group by each unique match of -k regexp.
 Output values > 0
+
 `./logstats -k "^2016-03-2[123]" "error" *.log`
 
 output e.g.
@@ -60,6 +63,7 @@ output e.g.
 
 Count all lines that contain `|warn|`, `|error|`, `|fatal|` and group by these three. The regexp
 "." matches anything, but another regexp could filter.
+
 `./logstats -k "\|warn\||\|error\||\|fatal\|" "." *.log`
 
 output e.g.
