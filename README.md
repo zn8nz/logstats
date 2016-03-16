@@ -1,7 +1,26 @@
 # logstats
 Search through logs with timestamped entries, creating summary of occurrences of a regexp per line, per time interval.
 
-##examples with -t
+## version
+Version 1.0, 2016-03-16
+
+## parameters
+
+`./logstats <options> <regexp> <glob>`
+
+`-t`: _time unit_: grouping interval; valid values: 10, 15, 30 = minutes; 1, 2, 3, 6, 12, 24 = hours; 31 = month; 365 = year.
+
+`-o` _order_: the order of the fields in the timestamps, by default "ymdhisf": i=minutes, f=fraction of seconds.
+
+`-k` _regexp_: regexp to filter and group by.
+
+`-p`: print all the file names and the number of matches per file name.
+
+`-d`: print the duration of execution and number of files
+
+`-version`: print version number
+
+## examples with -t
 
 Count occurrences of "error" in all files that match data/log*.txt, group by 30 min intervals, 
 output for values > 0.
@@ -26,7 +45,7 @@ in the -o option. If the date format is month/day/year, we can indicate that wit
 `./logstat -t 1 -o "--mdyhisf" "(?i:error)" *.txt`
 
 
-##examples with -k
+## examples with -k
 
 Count occurrences of "error" in all files in current folder that match *.log. Only consider lines
 that start with "2016-03-21", "2016-03-22", "2016-03-23". Group by each unique match of -k regexp.
@@ -45,20 +64,10 @@ Count all lines that contain `|warn|`, `|error|`, `|fatal|` and group by these t
 
 output e.g.
 ```
-warn,       23 
+warn ,       23 
 error,        2
 fatal,        1
 ```
-
-##parameters
-
-`./logstats <options> <regexp> <glob>`
-
-`-p`: 10 = ten minutes, 15 = 15 minutes, 30 = half hour, 1 = one hour, 2 = two hour, 3 = 3 hour, 6 = 6 hour, 12 = 12 hour, 0 = 1 day intervals.
-
-`-o`: the order of the fields in the timestamps, by default "ymdhisf": i=minutes, f=fraction of seconds.
-
-`-k`: regexp to filter and group by.
 
 The effect of -k can be described in a pseudo SQL as:
 ```sql
@@ -68,8 +77,29 @@ WHERE a matches k AND a matches regexp
 GROUP BY k
 ```
 
+## examples with -p and -d
+`-p` prints the files and how many occurrences of the search pattern
+`-d` prints the duration
+```
+> ./logstats -p -d -t 3 "house" ../data/log000?.txt
+        0 in ../data/log0001.txt
+        0 in ../data/log0002.txt
+        0 in ../data/log0003.txt
+        1 in ../data/log0004.txt
+        0 in ../data/log0005.txt
+        0 in ../data/log0006.txt
+        1 in ../data/log0007.txt
+        2 in ../data/log0008.txt
+        0 in ../data/log0009.txt
+
+552.0397ms for 9 files
+
+2016-03-03 15:00,        1
+2016-03-03 18:00,        2
+2016-03-03 21:00,        1
+```
+
 # known bugs / to do
 1. Log entries that span multiple lines may not be handled correctly, as logstats consideres each individual line.
 Lines that show up with dates like 1999 and 2000 in the output are a symptom of this bug.
-2. Output not aligned with `-k`, if the key regexp matches different length strings.
-3. Timestamps without separators between the fields, e.g. `20160306-125959.3` cannot be parsed correctly as such with the `-o` option. As a workaround for now use the `-k` with a string match. I think I will solve this by an alternative to `-o`: `-f "yyyymmddhhiissf"`
+2. Timestamps without separators between the fields, e.g. `20160306-125959.3` cannot be parsed correctly as such with the `-o` option. As a workaround for now use the `-k` with a string match. I think I will solve this by an alternative to `-o`: `-f "yyyymmddhhiissf"`

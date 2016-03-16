@@ -1,11 +1,11 @@
 // logstats processes logs and and prints the number of lines that contain a given regexp.
 // Pass as arguments the options -o to define the order of number fields inside the timestamp and
 // -t to set a time interval for grouping, ranging from 10 minutes to 1 day.
+// Use -k <regexp> instead of -t to filter lines by regexp; for those lines count the main regexp matches.
 package main
 
 import (
 	"bufio"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -16,29 +16,22 @@ import (
 	"time"
 )
 
-const (
-	_10min   = 10
-	_15min   = 15
-	_30min   = 30
-	_1hour   = 1
-	_2hour   = 2
-	_3hours  = 3
-	_6hours  = 6
-	_12hours = 12
-	_1day    = 0
-)
+const version = "1.0"
 
 var (
 	factor = [...]int{1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9}
 
 	settings = struct {
-		order   string
-		groupBy int
-		rxCount *regexp.Regexp
-		rxKey   *regexp.Regexp
+		order    string
+		groupBy  int
+		rxCount  *regexp.Regexp
+		rxKey    *regexp.Regexp
+		progress bool
+		duration bool
+		version  bool
 	}{
 		order:   "ymdhisf",
-		groupBy: _1hour,
+		groupBy: 1,
 	}
 
 	counter = make(map[string]int)
@@ -50,12 +43,21 @@ func main() {
 	// parse options
 	var key string
 
-	flag.StringVar(&settings.order, "o", "ymdhisf", "order of the number fields: y=year, m=month, d=day, h=hour, i=min, s=sec, f=fraction")
-	flag.IntVar(&settings.groupBy, "t", 0, "group by: 10=ten minutes, 15=¼ hour, 30=½ hour, 1=hour, 2=two hr, 3=three hr, 6=six hr, 12=½ day, 0=day")
+	flag.StringVar(&settings.order, "o", "ymdhisf", "order of the timestamp fields: y=year, m=month, d=day, h=hour, i=min, s=sec, f=fraction")
+	flag.IntVar(&settings.groupBy, "t", 24, "valid intervals: 10, 15, 20, 30 = minutes; 1, 2, 3, 6, 12, 24 = hours; 31 = month; 365 = year")
 	flag.StringVar(&key, "k", "", "regexp that defines the key to group by; cannot use with -o and -t")
+	flag.BoolVar(&settings.progress, "p", false, "print number of matches per file name")
+	flag.BoolVar(&settings.duration, "d", false, "print duration and number of files")
+	flag.BoolVar(&settings.version, "version", false, "print version number only")
 	flag.Parse()
+
+	if settings.version {
+		fmt.Println(version)
+		return
+	}
+
 	if flag.NArg() < 2 {
-		fmt.Println("Usage: <options> <regexp> <glob>")
+		fmt.Fprintln(os.Stderr, "Usage: <options> <regexp> <glob>")
 		return
 	}
 
@@ -69,32 +71,52 @@ func main() {
 	settings.rxCount = regexp.MustCompile(pattern)
 
 	// go through the files
-	err := processFiles(flag.Arg(1))
+	t0 := time.Now()
+	n, err := processFiles(flag.Arg(1))
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 	}
-	// sort
+	if settings.progress {
+		fmt.Println("")
+	}
+	elapsed := time.Since(t0)
+	if settings.duration {
+		fmt.Printf("%v for %d files\n\n", elapsed, n)
+	}
+
+	// find max key length
+	klen := 0
+	for k, _ := range counter {
+		if len(k) > klen {
+			klen = len(k)
+		}
+	}
+
+	// fill array with output for sorting
 	arr := make([]string, len(counter))
 	i := 0
 	for k, v := range counter {
-		arr[i] = fmt.Sprintf("%s,%9d", k, v)
+		arr[i] = fmt.Sprintf("%-*s,%9d", klen, k, v)
 		i++
 	}
+	// sort and then print
 	sort.Strings(arr)
 	for _, s := range arr {
 		fmt.Println(s)
 	}
 }
 
-func processFiles(glob string) error {
+func processFiles(glob string) (int, error) {
 	files, err := filepath.Glob(glob)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	for _, file := range files {
-		file, err := os.Open(file)
+	n := 0
+	for _, fn := range files {
+		nmatch := 0
+		file, err := os.Open(fn)
 		if err != nil {
-			return err
+			return n, err
 		}
 		defer file.Close()
 
@@ -107,35 +129,50 @@ func processFiles(glob string) error {
 					continue
 				}
 				if settings.rxCount.MatchString(line) {
+					nmatch++
 					counter[match]++
 				}
 			} else if settings.rxCount.MatchString(line) {
 				ts, _ := parseTimestamp(settings.order, line)
-				min := ts.Minute()
+				min := 0
 				hour := ts.Hour()
+				day := ts.Day()
+				month := ts.Month()
+				format := "2006-01-02 15:04"
+
 				div := settings.groupBy
 				switch div {
-				case _1day:
-					min = 0
-					hour = 0
-				case _1hour:
-					min = 0
-				case _2hour, _3hours, _6hours, _12hours:
-					min = 0
-					hour = div * int(ts.Hour()/div)
-				case _10min, _15min, _30min:
+				case 10, 15, 20, 30:
 					min = div * int(ts.Minute()/div)
+				case 1:
+					// noop
+				case 2, 3, 6, 12:
+					hour = div * int(ts.Hour()/div)
+				case 24:
+					format = "2006-01-02"
+					hour = 0
+				case 31:
+					format = "2006-01"
+					day, hour = 1, 0
+				case 365:
+					format = "2006"
+					month, day, hour = 0, 1, 0
 				default:
-					return errors.New("Invalid value interval: " + strconv.Itoa(div))
+					return 0, fmt.Errorf("Invalid value interval %d ", div)
 				}
-				tt := time.Date(ts.Year(), ts.Month(), ts.Day(), hour, min, 0, 0, ts.Location())
-				key := tt.Format("2006-01-02 15:04:05")
+				tt := time.Date(ts.Year(), month, day, hour, min, 0, 0, ts.Location())
+				key := tt.Format(format)
+				nmatch++
 				counter[key]++
 				//fmt.Printf("%s|%s\n", tt.Format("2006-01-02 15:04:05"), line)
 			}
 		}
+		n++
+		if settings.progress {
+			fmt.Printf("%9d in %s\n", nmatch, fn)
+		}
 	}
-	return nil
+	return n, nil
 }
 
 // timestamp analyses a timestamp string and returns it as a *time.Time.
@@ -167,7 +204,7 @@ func parseTimestamp(layout, ts string) (*time.Time, error) {
 		case 'f':
 			nsec = number * factor[len(s[0])]
 		default:
-			return nil, errors.New("Invalid timestamp characters in layout; use [-ymdhisf]")
+			return nil, fmt.Errorf("Invalid timestamp characters in layout: [%s] use [-ymdhisf]", c)
 		}
 	}
 	if year < 100 {
