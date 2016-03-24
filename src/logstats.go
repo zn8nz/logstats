@@ -204,7 +204,7 @@ func parseTimestamp(layout, ts string) (*time.Time, error) {
 		case 'f':
 			nsec = number * factor[len(s[0])]
 		default:
-			return nil, fmt.Errorf("Invalid timestamp characters in layout: [%s] use [-ymdhisf]", c)
+			return nil, fmt.Errorf("Invalid timestamp characters in layout: [%s] use [-ymdhisf]", string(c))
 		}
 	}
 	if year < 100 {
