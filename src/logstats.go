@@ -230,9 +230,9 @@ func parseTimestamp(ts string) (*time.Time, error) {
 	return &t, nil
 }
 
-// split inserts a space in string 's' whereever a space occurs in the string 'split'
+// split inserts a space in string 's' whereever a 'x' occurs in the string 'split'
 // and returns the result. E.g. split("  20160406T225401|error", "......x..x.....x..x") ->
-// "  2016 04 06T22 54 01|error". Any other character than a space means: take corresponding
+// "  2016 04 06T22 54 01|error". Any other character than a 'x' means: take corresponding
 // character from 's'.
 func split(s string, split string) string {
 	var buf bytes.Buffer
