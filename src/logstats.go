@@ -6,6 +6,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"fmt"
 	"os"
@@ -16,11 +17,12 @@ import (
 	"time"
 )
 
-const version = "1.0"
+const version = "1.1"
 
 var (
 	factor = [...]int{1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9}
 
+	// command line parameters
 	settings = struct {
 		order    string
 		groupBy  int
@@ -29,6 +31,8 @@ var (
 		progress bool
 		duration bool
 		version  bool
+		offset   time.Duration
+		split    string
 	}{
 		order:   "ymdhisf",
 		groupBy: 1,
@@ -41,7 +45,7 @@ var (
 
 func main() {
 	// parse options
-	var key string
+	var key, offset string
 
 	flag.StringVar(&settings.order, "o", "ymdhisf", "order of the timestamp fields: y=year, m=month, d=day, h=hour, i=min, s=sec, f=fraction")
 	flag.IntVar(&settings.groupBy, "t", 24, "valid intervals: 10, 15, 20, 30 = minutes; 1, 2, 3, 6, 12, 24 = hours; 31 = month; 365 = year")
@@ -49,11 +53,22 @@ func main() {
 	flag.BoolVar(&settings.progress, "p", false, "print number of matches per file name")
 	flag.BoolVar(&settings.duration, "d", false, "print duration and number of files")
 	flag.BoolVar(&settings.version, "version", false, "print version number only")
+	flag.StringVar(&offset, "ofs", "", "timestamp offset in a format like -1.5h +13h45.5m 10s")
+	flag.StringVar(&settings.split, "s", "", "split timestamp at position indicated by space, e.g. '**** ** ** ' to split a continuous date '20160304' for parsing")
 	flag.Parse()
 
 	if settings.version {
 		fmt.Println(version)
 		return
+	}
+
+	if offset != "" {
+		var err error
+		settings.offset, err = time.ParseDuration(offset)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Invalid offset format, use h, m, s, e.g. -10h30.5m")
+			return
+		}
 	}
 
 	if flag.NArg() < 2 {
@@ -133,7 +148,7 @@ func processFiles(glob string) (int, error) {
 					counter[match]++
 				}
 			} else if settings.rxCount.MatchString(line) {
-				ts, _ := parseTimestamp(settings.order, line)
+				ts, _ := parseTimestamp(line)
 				min := 0
 				hour := ts.Hour()
 				day := ts.Day()
@@ -176,13 +191,14 @@ func processFiles(glob string) (int, error) {
 }
 
 // timestamp analyses a timestamp string and returns it as a *time.Time.
-// layout string is a combination of y, m, d, h, i, s, f, -
-// where -=skip the next number and i=minutes, f=fraction of seconds
-func parseTimestamp(layout, ts string) (*time.Time, error) {
-	arr := rx.FindAllStringSubmatch(ts, len(layout))
+func parseTimestamp(ts string) (*time.Time, error) {
+	if settings.split != "" {
+		ts = split(ts, settings.split)
+	}
+	arr := rx.FindAllStringSubmatch(ts, len(settings.order))
 	var year, month, day, hour, min, sec, nsec int
 	for i, s := range arr {
-		c := layout[i]
+		c := settings.order[i]
 		if c == '-' {
 			continue
 		}
@@ -210,6 +226,25 @@ func parseTimestamp(layout, ts string) (*time.Time, error) {
 	if year < 100 {
 		year += 2000
 	}
-	var t = time.Date(year, time.Month(month), day, hour, min, sec, nsec, time.UTC)
+	var t = time.Date(year, time.Month(month), day, hour, min, sec, nsec, time.UTC).Add(settings.offset)
 	return &t, nil
+}
+
+// split inserts a space in string 's' whereever a space occurs in the string 'split'
+// and returns the result. E.g. split("  20160406T225401|error", "......x..x.....x..x") ->
+// "  2016 04 06T22 54 01|error". Any other character than a space means: take corresponding
+// character from 's'.
+func split(s string, split string) string {
+	var buf bytes.Buffer
+	var j int
+	for i := 0; i < len(split); i++ {
+		if split[i] == 'x' {
+			buf.WriteByte(' ')
+		} else {
+			buf.WriteByte(s[j])
+			j++
+		}
+	}
+	buf.WriteString(s[j:])
+	return buf.String()
 }

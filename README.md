@@ -18,6 +18,10 @@ Version 1.0, 2016-03-16
 
 `-d`: print the duration of execution and number of files
 
+`-ofs`: timestamp pos/neg offset: e.g. `-ofs -5h45m10s`. Any *Go* duration format is accepted.
+
+`-s`: use to split continuous timestamp formats by inserting a space at position indicated with `x`, e.g. `20161204T125901.999` can be split with `-s ....x..x.....x..x`
+
 `-version`: print version number
 
 ## examples with -t
@@ -106,4 +110,4 @@ GROUP BY k
 # known bugs / to do
 1. Log entries that span multiple lines may not be handled correctly, as logstats consideres each individual line.
 Lines that show up with dates like 1999 and 2000 in the output are a symptom of this bug.
-2. Timestamps without separators between the fields, e.g. `20160306-125959.3` cannot be parsed correctly as such with the `-o` option. As a workaround for now use the `-k` with a string match. I think I will solve this by an alternative to `-o`: `-f "yyyymmddhhiissf"`
+
