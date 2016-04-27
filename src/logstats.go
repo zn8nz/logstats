@@ -7,6 +7,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -17,7 +18,7 @@ import (
 	"time"
 )
 
-const version = "1.1"
+const version = "1.2"
 
 var (
 	factor = [...]int{1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9}
@@ -34,7 +35,7 @@ var (
 		offset   time.Duration
 		split    string
 	}{
-		order:   "ymdhisf",
+		order:   "ymdhi",
 		groupBy: 1,
 	}
 
@@ -47,14 +48,14 @@ func main() {
 	// parse options
 	var key, offset string
 
-	flag.StringVar(&settings.order, "o", "ymdhisf", "order of the timestamp fields: y=year, m=month, d=day, h=hour, i=min, s=sec, f=fraction")
-	flag.IntVar(&settings.groupBy, "t", 24, "valid intervals: 10, 15, 20, 30 = minutes; 1, 2, 3, 6, 12, 24 = hours; 31 = month; 365 = year")
+	flag.StringVar(&settings.order, "o", "ymdhi", "order of the timestamp fields: y=year, m=month, d=day, h=hour, i=min, seconds ignored")
+	flag.IntVar(&settings.groupBy, "t", 24, "valid intervals: 5, 10, 15, 20, 30 = minutes; 1, 2, 3, 6, 12, 24 = hours; 31 = month; 365 = year")
 	flag.StringVar(&key, "k", "", "regexp that defines the key to group by; cannot use with -o and -t")
 	flag.BoolVar(&settings.progress, "p", false, "print number of matches per file name")
 	flag.BoolVar(&settings.duration, "d", false, "print duration and number of files")
 	flag.BoolVar(&settings.version, "version", false, "print version number only")
-	flag.StringVar(&offset, "ofs", "", "timestamp offset in a format like -1.5h +13h45.5m 10s")
-	flag.StringVar(&settings.split, "s", "", "split timestamp at position indicated by space, e.g. '**** ** ** ' to split a continuous date '20160304' for parsing")
+	flag.StringVar(&offset, "ofs", "", "timestamp offset in a format like -1.5h +13h45.5m")
+	flag.StringVar(&settings.split, "s", "", "split timestamp at position indicated by space, e.g. '....x..x..x' to split a continuous date '20160304' for parsing")
 	flag.Parse()
 
 	if settings.version {
@@ -66,7 +67,7 @@ func main() {
 		var err error
 		settings.offset, err = time.ParseDuration(offset)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Invalid offset format, use h, m, s, e.g. -10h30.5m")
+			fmt.Fprintln(os.Stderr, "Invalid offset format, use h, m, e.g. -10h30.5m")
 			return
 		}
 	}
@@ -135,6 +136,10 @@ func processFiles(glob string) (int, error) {
 		}
 		defer file.Close()
 
+		var key0 string
+		var ts0 *time.Time
+		var fresh bool
+
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -147,39 +152,52 @@ func processFiles(glob string) (int, error) {
 					nmatch++
 					counter[match]++
 				}
-			} else if settings.rxCount.MatchString(line) {
-				ts, _ := parseTimestamp(line)
-				min := 0
-				hour := ts.Hour()
-				day := ts.Day()
-				month := ts.Month()
-				format := "2006-01-02 15:04"
-
-				div := settings.groupBy
-				switch div {
-				case 10, 15, 20, 30:
-					min = div * int(ts.Minute()/div)
-				case 1:
-					// noop
-				case 2, 3, 6, 12:
-					hour = div * int(ts.Hour()/div)
-				case 24:
-					format = "2006-01-02"
-					hour = 0
-				case 31:
-					format = "2006-01"
-					day, hour = 1, 0
-				case 365:
-					format = "2006"
-					month, day, hour = 0, 1, 0
-				default:
-					return 0, fmt.Errorf("Invalid value interval %d ", div)
+			} else {
+				var key string
+				ts, err := parseTimestamp(line)
+				if err != nil {
+					ts = ts0
+					key = key0
+				} else {
+					ts0 = ts
+					fresh = true
 				}
-				tt := time.Date(ts.Year(), month, day, hour, min, 0, 0, ts.Location())
-				key := tt.Format(format)
-				nmatch++
-				counter[key]++
-				//fmt.Printf("%s|%s\n", tt.Format("2006-01-02 15:04:05"), line)
+				if fresh && settings.rxCount.MatchString(line) {
+					min := 0
+					hour := ts.Hour()
+					day := ts.Day()
+					month := ts.Month()
+					format := "2006-01-02 15:04"
+
+					div := settings.groupBy
+					switch div {
+					case 5, 10, 15, 20, 30:
+						min = div * int(ts.Minute()/div)
+					case 1:
+						// noop
+					case 2, 3, 6, 12:
+						hour = div * int(ts.Hour()/div)
+					case 24:
+						format = "2006-01-02"
+						hour = 0
+					case 31:
+						format = "2006-01"
+						day, hour = 1, 0
+					case 365:
+						format = "2006"
+						month, day, hour = 0, 1, 0
+					default:
+						return 0, fmt.Errorf("Invalid value interval %d ", div)
+					}
+					tt := time.Date(ts.Year(), month, day, hour, min, 0, 0, ts.Location())
+					key = tt.Format(format)
+
+					nmatch++
+					counter[key]++
+					key0 = key
+					fresh = false
+					//fmt.Printf("%s|%s\n", tt.Format("2006-01-02 15:04:05"), line)
+				}
 			}
 		}
 		n++
@@ -194,9 +212,15 @@ func processFiles(glob string) (int, error) {
 func parseTimestamp(ts string) (*time.Time, error) {
 	if settings.split != "" {
 		ts = split(ts, settings.split)
+		if ts == "" {
+			return nil, errors.New("no timestamp(1)")
+		}
 	}
 	arr := rx.FindAllStringSubmatch(ts, len(settings.order))
-	var year, month, day, hour, min, sec, nsec int
+	if len(arr) < len(settings.order) {
+		return nil, errors.New("no timestamp(2)")
+	}
+	var year, month, day, hour, min int
 	for i, s := range arr {
 		c := settings.order[i]
 		if c == '-' {
@@ -215,18 +239,14 @@ func parseTimestamp(ts string) (*time.Time, error) {
 			hour = number
 		case 'i':
 			min = number
-		case 's':
-			sec = number
-		case 'f':
-			nsec = number * factor[len(s[0])]
 		default:
-			return nil, fmt.Errorf("Invalid timestamp characters in layout: [%s] use [-ymdhisf]", string(c))
+			return nil, fmt.Errorf("Invalid timestamp characters in layout: [%s] use [-ymdhi]", string(c))
 		}
 	}
 	if year < 100 {
 		year += 2000
 	}
-	var t = time.Date(year, time.Month(month), day, hour, min, sec, nsec, time.UTC).Add(settings.offset)
+	var t = time.Date(year, time.Month(month), day, hour, min, 0, 0, time.UTC).Add(settings.offset)
 	return &t, nil
 }
 
@@ -235,6 +255,9 @@ func parseTimestamp(ts string) (*time.Time, error) {
 // "  2016 04 06T22 54 01|error". Any other character than a 'x' means: take corresponding
 // character from 's'.
 func split(s string, split string) string {
+	if len(split) > len(s) {
+		return ""
+	}
 	var buf bytes.Buffer
 	var j int
 	for i := 0; i < len(split); i++ {

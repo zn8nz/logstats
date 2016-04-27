@@ -2,15 +2,15 @@
 Search through logs with timestamped entries, creating summary of occurrences of a regexp per line, per time interval.
 
 ## version
-Version 1.0, 2016-03-16
+Version 1.2, 2016-04-27
 
 ## parameters
 
 `./logstats <options> <regexp> <glob>`
 
-`-t`: _time unit_: grouping interval; valid values: 10, 15, 30 = minutes; 1, 2, 3, 6, 12, 24 = hours; 31 = month; 365 = year.
+`-t`: _time unit_: grouping interval; valid values: 5, 10, 15, 30 = minutes; 1, 2, 3, 6, 12, 24 = hours; 31 = month; 365 = year.
 
-`-o` _order_: the order of the fields in the timestamps, by default "ymdhisf": i=minutes, f=fraction of seconds.
+`-o` _order_: the order of the fields in the timestamps, by default "ymdhi": i=minutes, seconds ignored
 
 `-k` _regexp_: regexp to filter and group by.
 
@@ -18,11 +18,22 @@ Version 1.0, 2016-03-16
 
 `-d`: print the duration of execution and number of files
 
-`-ofs`: timestamp pos/neg offset: e.g. `-ofs -5h45m10s`. Any *Go* duration format is accepted.
+`-ofs`: timestamp pos/neg offset: e.g. `-ofs -5h45m`. Any *Go* duration format is accepted.
 
 `-s`: use to split continuous timestamp formats by inserting a space at position indicated with `x`, e.g. `20161204T125901.999` can be split with `-s ....x..x.....x..x`
 
 `-version`: print version number
+
+## general
+
+Except for the `-k` option, the program scans through files line by line and looks for lines
+that have a timestamp in format defined with `-o` and `-s`. Each line with a timestamp is deemed a *log entry*. 
+A log entry can span multiple lines. If a log entry contains a certain pattern (regexp), then a counter will be incremented
+for the time interval defined by `-t` in which that entry occurs. 
+Multiple occurences of the pattern in the same log entry will be counted as 1.
+
+With the `-k` option, the program just looks for lines that match the pattern after `-k` and timestamps are ignored
+(unless they match the pattern). The `-k` option cannot be used with `-t`, `-s`, `-o`. See for futher details below.
 
 ## examples with -t
 
@@ -48,7 +59,7 @@ Count occurrences of "error", ignore case, in all files *.txt that that have a l
 E.g. with some line number and thread number before the timestamp. We can skip these numbers by using a one "-" per number.
 in the `-o` option. If the date format is month/day/year, we can indicate that with "mdy" as part of the `-o` option.
 
-`./logstat -t 1 -o "--mdyhisf" "(?i:error)" *.txt`
+`./logstat -t 1 -o "--mdyhi" "(?i:error)" *.txt`
 
 
 ## examples with -k
@@ -107,7 +118,7 @@ GROUP BY k
 2016-03-03 21:00,        1
 ```
 
-# known bugs / to do
-1. Log entries that span multiple lines may not be handled correctly, as logstats consideres each individual line.
-Lines that show up with dates like 1999 and 2000 in the output are a symptom of this bug.
+## to do
+Add a parameter `-t 7` to group on days of the week. Output would list Sun, Mon, Tue etc. with their respective tallies.
+
 
