@@ -18,11 +18,9 @@ import (
 	"time"
 )
 
-const version = "1.2"
+const version = "1.3"
 
 var (
-	factor = [...]int{1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9}
-
 	// command line parameters
 	settings = struct {
 		order    string
@@ -34,6 +32,7 @@ var (
 		version  bool
 		offset   time.Duration
 		split    string
+		cutoff   int
 	}{
 		order:   "ymdhi",
 		groupBy: 1,
@@ -56,6 +55,7 @@ func main() {
 	flag.BoolVar(&settings.version, "version", false, "print version number only")
 	flag.StringVar(&offset, "ofs", "", "timestamp offset in a format like -1.5h +13h45.5m")
 	flag.StringVar(&settings.split, "s", "", "split timestamp at position indicated by space, e.g. '....x..x..x' to split a continuous date '20160304' for parsing")
+	flag.IntVar(&settings.cutoff, "cof", 25, "only look for timestamp in the beginning of the line, upto this number of characers")
 	flag.Parse()
 
 	if settings.version {
@@ -127,6 +127,7 @@ func processFiles(glob string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	cutoff := settings.cutoff
 	n := 0
 	for _, fn := range files {
 		nmatch := 0
@@ -154,7 +155,12 @@ func processFiles(glob string) (int, error) {
 				}
 			} else {
 				var key string
-				ts, err := parseTimestamp(line)
+				c := len(line)
+				if cutoff < c {
+					c = cutoff
+				}
+
+				ts, err := parseTimestamp(line[0:c])
 				if err != nil {
 					ts = ts0
 					key = key0
