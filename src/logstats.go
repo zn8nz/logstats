@@ -55,7 +55,7 @@ func main() {
 	flag.BoolVar(&settings.version, "version", false, "print version number only")
 	flag.StringVar(&offset, "ofs", "", "timestamp offset in a format like -1.5h +13h45.5m")
 	flag.StringVar(&settings.split, "s", "", "split timestamp at position indicated by space, e.g. '....x..x..x' to split a continuous date '20160304' for parsing")
-	flag.IntVar(&settings.cutoff, "cof", 25, "only look for timestamp in the beginning of the line, upto this number of characers")
+	flag.IntVar(&settings.cutoff, "cof", 25, "only look for timestamp in the beginning of the line, upto this number of characters")
 	flag.Parse()
 
 	if settings.version {

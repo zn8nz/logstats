@@ -22,6 +22,8 @@ Version 1.2, 2016-04-27
 
 `-s`: use to split continuous timestamp formats by inserting a space at position indicated with `x`, e.g. `20161204T125901.999` can be split with `-s ....x..x.....x..x`
 
+`-cof`: cutoff: number of characters since beginning of line to search for timestamp; ignore rest of line; default 25
+
 `-version`: print version number
 
 ## general
