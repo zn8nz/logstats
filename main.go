@@ -10,6 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,7 +19,7 @@ import (
 	"time"
 )
 
-const version = "1.3"
+const version = "1.4"
 
 var (
 	// command line parameters
@@ -54,7 +55,7 @@ func main() {
 	flag.BoolVar(&settings.duration, "d", false, "print duration and number of files")
 	flag.BoolVar(&settings.version, "version", false, "print version number only")
 	flag.StringVar(&offset, "ofs", "", "timestamp offset in a format like -1.5h +13h45.5m")
-	flag.StringVar(&settings.split, "s", "", "split timestamp at position indicated by space, e.g. '....x..x..x' to split a continuous date '20160304' for parsing")
+	flag.StringVar(&settings.split, "s", "", "split timestamp at position indicated by 'x', e.g. '....x..x..x' to split a continuous date '20160304' for parsing")
 	flag.IntVar(&settings.cutoff, "cof", 25, "only look for timestamp in the beginning of the line, upto this number of characters")
 	flag.Parse()
 
@@ -88,7 +89,7 @@ func main() {
 
 	// go through the files
 	t0 := time.Now()
-	n, err := processFiles(flag.Arg(1))
+	n, err := loopFiles(flag.Arg(1))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
@@ -102,7 +103,7 @@ func main() {
 
 	// find max key length
 	klen := 0
-	for k, _ := range counter {
+	for k := range counter {
 		if len(k) > klen {
 			klen = len(k)
 		}
@@ -122,96 +123,109 @@ func main() {
 	}
 }
 
-func processFiles(glob string) (int, error) {
+func loopFiles(glob string) (n int, err error) {
 	files, err := filepath.Glob(glob)
 	if err != nil {
 		return 0, err
 	}
-	cutoff := settings.cutoff
-	n := 0
 	for _, fn := range files {
-		nmatch := 0
-		file, err := os.Open(fn)
-		if err != nil {
-			return n, err
-		}
-		defer file.Close()
-
-		var key0 string
-		var ts0 *time.Time
-		var fresh bool
-
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if settings.rxKey != nil {
-				match := settings.rxKey.FindString(line)
-				if match == "" {
-					continue
-				}
-				if settings.rxCount.MatchString(line) {
-					nmatch++
-					counter[match]++
-				}
-			} else {
-				var key string
-				c := len(line)
-				if cutoff < c {
-					c = cutoff
-				}
-
-				ts, err := parseTimestamp(line[0:c])
-				if err != nil {
-					ts = ts0
-					key = key0
-				} else {
-					ts0 = ts
-					fresh = true
-				}
-				if fresh && settings.rxCount.MatchString(line) {
-					min := 0
-					hour := ts.Hour()
-					day := ts.Day()
-					month := ts.Month()
-					format := "2006-01-02 15:04"
-
-					div := settings.groupBy
-					switch div {
-					case 5, 10, 15, 20, 30:
-						min = div * int(ts.Minute()/div)
-					case 1:
-						// noop
-					case 2, 3, 6, 12:
-						hour = div * int(ts.Hour()/div)
-					case 24:
-						format = "2006-01-02"
-						hour = 0
-					case 31:
-						format = "2006-01"
-						day, hour = 1, 0
-					case 365:
-						format = "2006"
-						month, day, hour = 0, 1, 0
-					default:
-						return 0, fmt.Errorf("Invalid value interval %d ", div)
-					}
-					tt := time.Date(ts.Year(), month, day, hour, min, 0, 0, ts.Location())
-					key = tt.Format(format)
-
-					nmatch++
-					counter[key]++
-					key0 = key
-					fresh = false
-					//fmt.Printf("%s|%s\n", tt.Format("2006-01-02 15:04:05"), line)
-				}
-			}
-		}
+		err = oneFile(fn)
 		n++
-		if settings.progress {
-			fmt.Printf("%9d in %s\n", nmatch, fn)
-		}
 	}
 	return n, nil
+}
+
+func oneFile(fn string) error {
+	file, err := os.Open(fn)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	nmatch, err := loopLines(file)
+	if err != nil {
+		return err
+	}
+
+	if settings.progress {
+		fmt.Printf("%9d in %s\n", nmatch, fn)
+	}
+	return nil
+}
+
+func loopLines(reader io.Reader) (int, error) {
+	var key0 string
+	var ts0 *time.Time
+	var fresh bool
+	var nmatch int
+	cutoff := settings.cutoff
+
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if settings.rxKey != nil {
+			match := settings.rxKey.FindString(line)
+			if match == "" {
+				continue
+			}
+			if settings.rxCount.MatchString(line) {
+				nmatch++
+				counter[match]++
+			}
+		} else {
+			var key string
+			c := len(line)
+			if cutoff < c {
+				c = cutoff
+			}
+
+			ts, err := parseTimestamp(line[0:c])
+			if err != nil {
+				ts = ts0
+				key = key0
+			} else {
+				ts0 = ts
+				fresh = true
+			}
+			if fresh && settings.rxCount.MatchString(line) {
+				min := 0
+				hour := ts.Hour()
+				day := ts.Day()
+				month := ts.Month()
+				format := "2006-01-02 15:04"
+
+				div := settings.groupBy
+				switch div {
+				case 5, 10, 15, 20, 30:
+					min = div * int(ts.Minute()/div)
+				case 1:
+					// noop
+				case 2, 3, 6, 12:
+					hour = div * int(ts.Hour()/div)
+				case 24:
+					format = "2006-01-02"
+					hour = 0
+				case 31:
+					format = "2006-01"
+					day, hour = 1, 0
+				case 365:
+					format = "2006"
+					month, day, hour = 0, 1, 0
+				default:
+					return 0, fmt.Errorf("Invalid value interval %d ", div)
+				}
+				tt := time.Date(ts.Year(), month, day, hour, min, 0, 0, ts.Location())
+				key = tt.Format(format)
+
+				nmatch++
+				counter[key]++
+				key0 = key
+				fresh = false
+				//fmt.Printf("%s|%s\n", tt.Format("2006-01-02 15:04:05"), line)
+			}
+		}
+	}
+	return nmatch, nil
 }
 
 // timestamp analyses a timestamp string and returns it as a *time.Time.
